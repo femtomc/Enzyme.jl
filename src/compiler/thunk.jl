@@ -47,16 +47,22 @@ function resolver(name, ctx)
     return UInt64(reinterpret(UInt, ptr))
 end
 
+const cache = Dict{UInt, Any}()
+
 function thunk(f::F,tt::TT=Tuple{}) where {F<:Core.Function, TT<:Type}
     primal, adjoint, rt = fspec(f, tt)
 
     # We need to use primal as the key, to lookup the right method
     # but need to mixin the hash of the adjoint to avoid cache collisions
-    GPUCompiler.cached_compilation(_thunk, primal, hash(adjoint), adjoint=adjoint, rt=rt)::Thunk{F,rt,tt}
+    GPUCompiler.cached_compilation(cache, _thunk, _link, primal, hash(adjoint), adjoint=adjoint, rt=rt)::Thunk{F,rt,tt}
+end
+
+function _link(@nospecialize(primal::FunctionSpec), thunk)
+    return thunk
 end
 
 # actual compilation
-function _thunk(primal::FunctionSpec; adjoint, rt)
+function _thunk(@nospecialize(primal::FunctionSpec); adjoint, rt)
     target = Compiler.EnzymeTarget()
     params = Compiler.EnzymeCompilerParams()
     job    = Compiler.CompilerJob(target, primal, params)
